@@ -205,7 +205,8 @@
 								</tr>
 								<tr>
 									<td>QUALIFYING</td>
-									<td><input type="number" min="0" ng-change="c.service.roundsQualifyingChanged()" ng-model="c.service.currentCompetitionConfig.roundsQualifying"></td>
+									<td><input class="smaller" type="number" min="0" ng-change="c.service.countingQualifyingRoungsChanged()" ng-model="c.service.currentCompetitionConfig.countingQualificationRounds">of
+									<input class="smaller" type="number" min="0" ng-change="c.service.roundsQualifyingChanged()" ng-model="c.service.currentCompetitionConfig.roundsQualifying"></td>
 									<td><select ng-model="c.service.currentCompetitionConfig.typeQualifying" ng-change="c.service.typeQualifyingChanged()" ng-options="type for type in c.raceService.raceTypes">
 									</select></td>
 								</tr>
@@ -716,8 +717,8 @@
 			</div>
 		</div>
 		<div id="races" class="contentElement visible" ng-controller="RaceController as c">
-			<div id="configureRace-container">
-				<table ng-class="c.service.heatResultExistsInCurrentRound() ? 'locked' : ''">
+			<div id="configureRace-container" ng-class="c.service.heatResultExistsInCurrentRound() ? 'locked' : ''">
+				<table>
 					<tr>
 						<td class="tableSeperator" colspan="2"><span>RACE</span></td>
 					</tr>
@@ -842,6 +843,9 @@
 					ng-click="c.service.start()">
 					<span>START RACE in {{c.service.currentRound.countdown}}s</span>
 				</div> -->
+				<div class="button" ng-hide="c.service.heatResultExistsInCurrentRound() || c.service.currentRace.format.toUpperCase() != 'QUALIFYING' || c.service.currentRoundNumber <= 1 || c.service.getRaceStatus().raceStarted || c.service.getRaceStatus().raceCloseable" ng-click="c.service.copyFromLastRound()">
+					<span>COPY FROM LAST ROUND</span>
+				</div>
 				<div class="button" ng-hide="c.service.getRaceStatus().raceStarted || c.service.getRaceStatus().raceCloseable" ng-click="c.service.fillHeats()">
 					<span>AUTO ASSIGN PILOTS</span>
 				</div>
@@ -851,7 +855,7 @@
 				<div class="button" ng-hide="c.service.getRaceStatus().raceStarted || c.service.getRaceStatus().raceCloseable" ng-click="c.service.downloadTimetable()">
 					<span>DOWNLOAD EVENT TIMETABLE</span>
 				</div>
-				<div class="button" ng-hide="!c.service.getRaceStatus().raceStarted" ng-click="c.service.setRaceStopable()">
+				<div class="button" ng-hide="!c.service.getRaceStatus().raceStarted" ng-click="c.service.finish()">
 					<span>FINISH HEAT</span>
 				</div>
 				<div class="button" ng-hide="!c.service.getRaceStatus().raceCloseable" ng-click="c.service.close()">

@@ -43,6 +43,8 @@ var Screen2Controller = (function () {
         this.$indexedDB = $indexedDB;
         this.$interval = $interval;
         $scope.vm = this;
+        $scope.heatResults = [];
+        $scope.upcomingHeats = [];
         $interval(function () {
             $indexedDB.openStore('windowConfig', function (store) {
                 store.getAll().then(function (windowConfig) {
@@ -54,28 +56,34 @@ var Screen2Controller = (function () {
                                 .$eq(windowConfig[0].currentCompetitionUUID))
                                 .then(function (races) {
                                 $scope.races = races ? races : [];
+                                $scope.nandos = races ? races : [];
                             });
                         });
                     }
                 });
             });
         }, 1000, 0);
-        $scope.heatResults = [];
-        $scope.upcomingHeats = [];
         $scope.$watch('races', function () { return _this.racesChanged(); }, true);
     }
     Screen2Controller.prototype.racesChanged = function () {
-        this.$scope.heatResults.length = 0;
-        this.$scope.upcomingHeats.length = 0;
-        var ;
-        this = this;
-        if (this.$scope.races) {
-            this.$scope.races.forEach(function (race) {
+        //this.$scope.heatResults.length = 0;
+        //this.$scope.upcomingHeats.length = 0;
+
+        $races = this.$scope.races;
+        $heatResults = this.$scope.heatResults;
+        $upcomingHeats = this.$scope.upcomingHeats;
+
+        $heatResults.length = 0;
+        $upcomingHeats.length = 0;
+
+        if ($races) {
+            $races.forEach(function (race) {
+                console.log($races);
                 race.rounds.forEach(function (round) {
                     round.heats.forEach(function (heat) {
                         if (heat.heatResult) {
                             if (heat.heatResult.results && heat.heatResult.results.length > 0) {
-                                this.$scope.heatResults.push(new HeatResultViewObject({
+                                $heatResults.push(new HeatResultViewObject({
                                     heatNumber: heat.heatNumber,
                                     roundNumber: round.roundNumber,
                                     roundDescription: round.description,
@@ -85,11 +93,10 @@ var Screen2Controller = (function () {
                                     raceResultEntries: heat.heatResult.results,
                                     heatTimestamp: heat.heatResult.timestamp
                                 }));
-                            }
-                            ;
+                            };
                         }
                         else {
-                            this.$scope.upcomingHeats.push(new UpcomingHeatViewObject({
+                            $upcomingHeats.push(new UpcomingHeatViewObject({
                                 heatNumber: heat.heatNumber,
                                 roundNumber: round.roundNumber,
                                 roundDescription: round.description,
@@ -337,6 +344,7 @@ var CompetitionConfig = (function (_super) {
         this.classs = json.classs;
         this.roundsTraining = json.roundsTraining ? json.roundsTraining : 1;
         this.roundsQualifying = json.roundsQualifying ? json.roundsQualifying : 1;
+        this.countingQualificationRounds = json.countingQualificationRounds ? json.countingQualificationRounds : 1;
         this.roundsCompetition = json.roundsCompetition ? json.roundsCompetition : 1;
         this.typeTraining = json.typeTraining ? json.typeTraining : 'Time';
         this.typeQualifying = json.typeQualifying ? json.typeQualifying : 'Time';
@@ -928,6 +936,35 @@ var AjaxService = (function () {
     return AjaxService;
 }());
 /// <reference path="../_reference.ts"/>
+
+
+var CloudController = (function () {
+    function CloudController() {
+        this.service = CloudSyncService;
+        this.userService = UserService;
+    }
+    return CloudController;
+}());
+/// <reference path="../_reference.ts"/>
+var ManualTimingService = (function () {
+    function ManualTimingService() {
+    }
+    ManualTimingService.init = function () {
+        document.addEventListener("keypress", ManualTimingService.keyInput, true);
+    };
+    ManualTimingService.keyInput = function (e) {
+        if (e.keyCode >= "0".charCodeAt(0) && e.keyCode <= "9".charCodeAt(0) && RaceService.CURRENT_STATUS.raceStarted) {
+            var key = +String.fromCharCode(e.keyCode);
+            var fakeSerialMessage = ["%", "MANUAL", "" + key, "" + ((new Date().getTime() - RaceService.currentHeat.exactStartTime) / 1000)];
+            console.log("TIME: ", fakeSerialMessage);
+            RaceService.devicePassed(fakeSerialMessage, true);
+        }
+        return false;
+    };
+    return ManualTimingService;
+}());
+
+
 var MenuService = (function () {
     function MenuService() {
     }
@@ -1100,6 +1137,38 @@ var RaceService = (function () {
         RaceService.reloadQualificationResults();
         RaceService.update(RaceService.currentRace);
         RaceService.toogleHeatMenu(null);
+    };
+    RaceService.copyFromLastRound = function () {
+        var roundToUse = RaceService.currentRace.rounds[RaceService.currentRoundNumber - 2];
+        RaceService.currentRound.amountOfHeats = roundToUse.amountOfHeats;
+        RaceService.currentRound.blockingTime = roundToUse.blockingTime;
+        RaceService.currentRound.countdown = roundToUse.countdown;
+        RaceService.currentRound.duration = roundToUse.duration;
+        RaceService.currentRound.overtime = roundToUse.overtime;
+        RaceService.currentRound.amountOfLaps = roundToUse.amountOfLaps;
+        RaceService.currentRound.lapDistance = roundToUse.lapDistance;
+        RaceService.currentRound.amountOfQualifiedPilots = RaceService.qualificationResultOfCurrentRace.length;
+        RaceService.currentRound.heats.length = 0;
+        var _loop_1 = function(i) {
+            var oldHeat = roundToUse.heats[i];
+            var newHeat = new Heat({ heatNumber: oldHeat.heatNumber });
+            oldHeat.pilots.forEach(function (p) {
+                var qualifiedPilot = new QualifiedPilot(p);
+                var qualRes = RaceService.qualificationResultOfCurrentRace.filter(function (r) {
+                    return r.pilotUUID === p.uuid;
+                })[0];
+                qualifiedPilot.lapTimeSum = qualRes.lapTimesSum;
+                qualifiedPilot.lapTimes = qualRes.lapTimes.splice(0);
+                qualifiedPilot.rank = qualRes.rank;
+                newHeat.pilots.push(qualifiedPilot);
+            });
+            RaceService.currentRound.heats.push(newHeat);
+        };
+        for (var i = 0; i < roundToUse.heats.length; i++) {
+            _loop_1(i);
+        }
+        ;
+        RaceService.reloadAngular();
     };
     RaceService.roundNumberHelperCurrent = function () {
         if (RaceService.currentRoundNumber) {
@@ -1334,7 +1403,7 @@ var RaceService = (function () {
         for (var idx in RaceService.currentRound.heats) {
             for (var pIdx in RaceService.currentRound.heats[idx].pilots) {
                 if (RaceService.currentRound.heats[idx].pilots[pIdx].uuid == uuid) {
-                    RaceService.currentRound.heats[idx].pilots.splice(pIdx, 1);
+                    RaceService.currentRound.heats[idx].pilots.splice(+pIdx, 1);
                 }
                 return;
             }
@@ -1584,6 +1653,7 @@ var RaceService = (function () {
         document.getElementById("configureRace-container").classList.remove("mini");
     };
     RaceService.close = function () {
+        console.log("CLOSE pressed");
         if (RaceService.CURRENT_STATUS.raceStarted) {
             RaceService.setRaceStopable();
             RaceService.stopRace();
@@ -1678,6 +1748,17 @@ var RaceService = (function () {
                             found = true;
                             qualiResultEntry.lapTimes.push(heatResultEntry.bestRoundTime);
                             qualiResultEntry.lapTimesSum += +heatResultEntry.bestRoundTime;
+                            if (qualiResultEntry.lapTimes.length > CompetitionService.currentCompetitionConfig.countingQualificationRounds) {
+                                var sortedLapTimes = qualiResultEntry.lapTimes.slice(0).sort(function (a, b) {
+                                    return (a > 0 ? a : 9999999999) - (b > 0 ? b : 9999999999);
+                                });
+                                //sort overwrites initial array and
+                                sortedLapTimes.length = CompetitionService.currentCompetitionConfig.countingQualificationRounds;
+                                qualiResultEntry.lapTimesSum = 0;
+                                sortedLapTimes.forEach(function (lapTime) {
+                                    qualiResultEntry.lapTimesSum += +lapTime;
+                                });
+                            }
                         }
                     }
                     if (!found) {
@@ -1696,17 +1777,38 @@ var RaceService = (function () {
             });
         });
         var rank = 1;
-        for (var round = RaceService.currentRace.rounds.length; round > 0; round--) {
+        var bestResults = RaceService.currentRace.qualificationResults.filter(function (result) {
+            return result.lapTimes.filter(function (time) {
+                return time > 0;
+            }).length >= CompetitionService.currentCompetitionConfig.countingQualificationRounds && !result.disqualified;
+        });
+        bestResults.sort(function (a, b) {
+            return (+a.lapTimesSum > 0 ? +a.lapTimesSum : 9999999999) - (+b.lapTimesSum > 0 ? +b.lapTimesSum : 9999999999);
+        });
+        for (var rIdx in bestResults) {
+            bestResults[rIdx].rank = rank;
+            rank++;
+        }
+        for (var round = CompetitionService.currentCompetitionConfig.countingQualificationRounds - 1; round > 0; round--) {
             var filteredResults = RaceService.currentRace.qualificationResults.filter(function (result) {
-                return result.lapTimes.length == round && !result.disqualified;
+                return result.lapTimes.filter(function (time) {
+                    return time > 0;
+                }).length == round && !result.disqualified;
             });
             filteredResults.sort(function (a, b) {
-                return +a.lapTimesSum - +b.lapTimesSum;
+                return (+a.lapTimesSum > 0 ? +a.lapTimesSum : 9999999999) - (+b.lapTimesSum > 0 ? +b.lapTimesSum : 9999999999);
             });
             for (var rIdx in filteredResults) {
                 filteredResults[rIdx].rank = rank;
                 rank++;
             }
+        }
+        var worstResults = RaceService.currentRace.qualificationResults.filter(function (result) {
+            return !result.rank;
+        });
+        for (var rIdx in worstResults) {
+            worstResults[rIdx].rank = rank;
+            rank++;
         }
         RaceService.currentRace.qualificationResults.sort(function (a, b) {
             return +a.rank - +b.rank;
@@ -3899,6 +4001,9 @@ var CompetitionService = (function () {
     CompetitionService.roundsQualifyingChanged = function () {
         CompetitionService.raceConfigChanged();
     };
+    CompetitionService.countingQualifyingRoungsChanged = function () {
+        CompetitionService.raceConfigChanged();
+    };
     CompetitionService.typeTrainingChanged = function () {
         CompetitionService.raceConfigChanged();
     };
@@ -4534,6 +4639,23 @@ var RaceResultService = (function () {
             if (lapsForPilot.length > maxAmountOfLaps) {
                 maxAmountOfLaps = lapsForPilot.length;
             }
+            if (lapsForPilot.length == 0) {
+                raceResult.push(new RaceResultEntry({
+                    amountOfLaps: 0,
+                    pilotUUID: pilot.uuid,
+                    pilotNumber: pilot.pilotNumber,
+                    pilotName: pilot.firstName + " " + pilot.lastName,
+                    manualTimingIndex: pilot.manualTimingIndex,
+                    deviceId: pilot.deviceId,
+                    raceUUID: race.uuid,
+                    lastPassing: 0,
+                    totalTime: 0,
+                    lastRoundTime: 0,
+                    averageRoundTime: 0,
+                    bestRoundTime: 0,
+                    disqualified: false
+                }));
+            }
             if (lapsForPilot && lapsForPilot.length >= 1) {
                 disqualified = lapsForPilot[0].disqualified;
                 raceResult.push(new RaceResultEntry({
@@ -4919,7 +5041,12 @@ document
     .addEventListener("DOMContentLoaded", function () {
     //					document.getElementById("welcomeButton").addEventListener(
     //							"click", hideWelcome, false);
-    changelogString += "ANNOUNCEMENT: fpv race tracker 1.0\n";
+    changelogString += "\n\n20.July 2016\n";
+    changelogString += "Version 0.4.0.0\n";
+    changelogString += "\t* pilots which did not compete or did not finish lap 1 (but were assigned) in a round are now ranked last.\n";
+    changelogString += "\t* it is possible to define x out of y rounds which count in the qualifying.\n";
+    changelogString += "\t* it is possible to copy the heats from the last round in qualifying.\n";
+    changelogString += "\nANNOUNCEMENT: fpv race tracker 1.0\n";
     changelogString += "thanks to the community, supporters and advisors, we are certain to create the perfect solution for everybody.\n";
     changelogString += "visit our facebook page and stay tuned for a few more weeks to the release of version 1.0: www.facebook.com/FPVRaceTracker\n";
     changelogString += "\t* we promise major improvements in the way the app looks and feels\n";
@@ -5147,28 +5274,3 @@ function log(text, data) {
 /// <reference path='interfaces/IManageScreen2Scope.ts' />
 /// <reference path='initMainScreen.ts' /> 
 /// <reference path="../_reference.ts"/>
-var CloudController = (function () {
-    function CloudController() {
-        this.service = CloudSyncService;
-        this.userService = UserService;
-    }
-    return CloudController;
-}());
-/// <reference path="../_reference.ts"/>
-var ManualTimingService = (function () {
-    function ManualTimingService() {
-    }
-    ManualTimingService.init = function () {
-        document.addEventListener("keypress", ManualTimingService.keyInput, true);
-    };
-    ManualTimingService.keyInput = function (e) {
-        if (e.keyCode >= "0".charCodeAt(0) && e.keyCode <= "9".charCodeAt(0) && RaceService.CURRENT_STATUS.raceStarted) {
-            var key = +String.fromCharCode(e.keyCode);
-            var fakeSerialMessage = ["%", "MANUAL", "" + key, "" + ((new Date().getTime() - RaceService.currentHeat.exactStartTime) / 1000)];
-            console.log("TIME: ", fakeSerialMessage);
-            RaceService.devicePassed(fakeSerialMessage, true);
-        }
-        return false;
-    };
-    return ManualTimingService;
-}());
